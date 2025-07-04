@@ -1,40 +1,29 @@
 FROM python:3.12-slim
 
-# Обновляем пакеты и устанавливаем необходимые зависимости
+# Установка зависимостей
 RUN apt-get update && apt-get install -y \
+    chromium-driver \
+    chromium \
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libxss1 \
+    libgtk-3-0 \
+    libdrm2 \
+    libgbm1 \
     wget \
     curl \
     unzip \
-    gnupg \
-    fonts-liberation \
-    libnss3 \
-    libxss1 \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcb-dri3-0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxi6 \
-    libxtst6 \
-    libgbm-dev \
-    chromium \
-    chromium-driver \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+    && apt-get clean
 
-# Устанавливаем зависимости проекта
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PATH="/usr/lib/chromium:/usr/lib/chromium-browser:$PATH"
+ENV CHROME_BIN="/usr/bin/chromium"
+ENV CHROMEDRIVER_PATH="/usr/bin/chromedriver"
 
-# Копируем остальные файлы
-COPY . .
+# Установка Python зависимостей
+WORKDIR /app
+COPY . /app
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-# Устанавливаем переменные окружения
-ENV CHROME_BIN=/usr/bin/chromium
-ENV PATH=$PATH:/usr/bin
-
-# Запускаем
 CMD ["python", "main.py"]

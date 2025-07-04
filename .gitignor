@@ -1,0 +1,54 @@
+# 🐍 Python кеш и временные файлы
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pdb
+*.egg
+*.egg-info/
+*.log
+
+# 🛠 Сборки и временные каталоги
+build/
+dist/
+*.spec
+
+# 📦 Виртуальное окружение (venv)
+venv/
+.env
+.venv/
+
+# 🧪 Тестовые отчеты
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+coverage.xml
+
+# 💻 IDE/редактор
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# 🚫 Операционная система
+.DS_Store
+Thumbs.db
+
+# 📁 Файлы кэша Selenium WebDriver Manager
+.wdm/
+~/.wdm/
+
+# 📸 Скриншоты/временные данные (если ты захочешь сохранять что-то)
+screenshots/
+temp/
+
+# 🔧 Docker
+*.pid
+*.sock
+
+# 💡 Railway и GitHub специфичные
+railway.json
+railway.env
