@@ -25,6 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.utils import ChromeType
 
 # ─────────────────────────────────────
 # 🔧 НАСТРОЙКИ
@@ -73,13 +74,16 @@ def tg_send(text: str) -> None:
 # ─────────────────────────────────────
 # 🌐 SELENIUM
 # ─────────────────────────────────────
+
 def make_driver() -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+    # Укажи явную версию драйвера
+    driver_path = ChromeDriverManager(version="138.0.7247.0").install()
+    return webdriver.Chrome(service=Service(driver_path), options=opts)
 
 # ─────────────────────────────────────
 # 🔍 ПАРСИНГ
