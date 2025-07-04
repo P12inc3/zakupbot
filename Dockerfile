@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# ── Устанавливаем Chromium и Chromedriver той же версии ──
+# ---------- Linux-пакеты ----------
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
@@ -21,17 +21,17 @@ RUN apt-get update && apt-get install -y \
     xdg-utils && \
     rm -rf /var/lib/apt/lists/*
 
-# ── Устанавливаем Python-зависимости ──
+# ---------- Python-зависимости ----------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Копируем исходники ──
+# ---------- Код ----------
 WORKDIR /app
 COPY . /app
 
-# ── Пути для Selenium ──
+# ---------- Пути для Selenium ----------
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-# ── Точка входа ──
+# ---------- Старт ----------
 CMD ["python", "main.py"]
