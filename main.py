@@ -15,16 +15,16 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 # ─────────────────────────────────────
 # 🔧 НАСТРОЙКИ
 # ─────────────────────────────────────
-TOKEN = "твой_токен_сюда"
-CHAT_IDS = ["твой_chat_id"]  # можешь добавить больше
+TOKEN = "ВАШ_ТГ_ТОКЕН"
+CHAT_IDS = ["ВАШ_CHAT_ID"]
 
 URL = (
     "https://zakup.sk.kz/#/ext?"
     "tabs=advert&q=Экспертиз&adst=PUBLISHED&lst=PUBLISHED&page=1"
 )
-WAIT_SELECTOR = "div.block-footer"
+WAIT_SELECTOR = "div.block-footer"             # где есть «Найдено …»
 
-CHECK_INTERVAL = 300                 # интервал проверки (5 мин)
+CHECK_INTERVAL = 300                           # 5 минут
 JITTER_SECONDS = 30
 MAX_CONSECUTIVE_ERRORS = 4
 DRIVER_REFRESH_HOURS = 6
@@ -37,7 +37,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
 )
-
 
 # ─────────────────────────────────────
 # 📩 TELEGRAM
@@ -52,7 +51,6 @@ def tg_send(text: str) -> None:
         except Exception as exc:
             logging.error("TG error: %s", exc)
 
-
 # ─────────────────────────────────────
 # 🌐 SELENIUM
 # ─────────────────────────────────────
@@ -62,37 +60,39 @@ def make_driver() -> webdriver.Chrome:
     opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=opts)
-
+    # chromedriver и chromium ставятся через apt, пути стандартные
+    return webdriver.Chrome(
+        service=Service("/usr/bin/chromedriver"),
+        options=opts,
+    )
 
 # ─────────────────────────────────────
 # 🔍 ПАРСИНГ
 # ─────────────────────────────────────
 _RE = re.compile(r"Найдено\s+(\d+)")
 
-
 def parse_count(text: str) -> int | None:
     m = _RE.search(text)
     return int(m.group(1)) if m else None
-
 
 def fetch_count(driver: webdriver.Chrome) -> int | None:
     driver.get(URL)
     WebDriverWait(driver, 30).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_SELECTOR))
     )
-    time.sleep(2)
+    time.sleep(2)                          # даём JS полностью прогрузиться
     txt = driver.execute_script("return document.body.innerText")
     return parse_count(txt)
-
 
 # ─────────────────────────────────────
 # 🔁 ОСНОВНОЙ ЦИКЛ
 # ─────────────────────────────────────
 def main() -> None:
+    print("✅ main.py запущен")            # <-- диагноз старта
     driver = make_driver()
-    driver_birth = datetime.now(tz=timezone.utc)
+    print("✅ Драйвер создан")             # <-- диагноз
 
+    driver_birth = datetime.now(tz=timezone.utc)
     last_count = None
     consecutive_err = 0
     backoff = 0
@@ -105,8 +105,9 @@ def main() -> None:
         while True:
             start = time.time()
 
+            # профилактический рестарт драйвера
             if datetime.now(tz=timezone.utc) - driver_birth > timedelta(hours=DRIVER_REFRESH_HOURS):
-                logging.info("Refreshing Chrome driver (%.1fh).", DRIVER_REFRESH_HOURS)
+                logging.info("Refreshing Chrome driver.")
                 try:
                     driver.quit()
                 except Exception:
@@ -117,8 +118,9 @@ def main() -> None:
             try:
                 count = fetch_count(driver)
                 if count is None:
-                    raise ValueError("Не удалось извлечь количество лотов.")
+                    raise ValueError("Не найдено число лотов.")
 
+                # сайт «ожил»
                 if sent_down_notice:
                     tg_send("✅ Связь с zakup.sk.kz восстановлена.")
                     sent_down_notice = False
@@ -142,9 +144,8 @@ def main() -> None:
             except (TimeoutException, WebDriverException, Exception) as exc:
                 consecutive_err += 1
                 logging.warning("Fetch failed (%d): %s", consecutive_err, exc)
-
                 if not sent_down_notice:
-                    tg_send(f"⚠ Проблема с zakup.sk.kz: {exc}")
+                    tg_send(f"⚠️ Проблема с zakup.sk.kz: {exc}")
                     sent_down_notice = True
 
                 if consecutive_err >= MAX_CONSECUTIVE_ERRORS:
@@ -172,6 +173,5 @@ def main() -> None:
         except Exception:
             pass
 
-
-if __name__ == "_main_":
+if __name__ == "__main__":
     main()
