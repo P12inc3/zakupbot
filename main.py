@@ -9,7 +9,6 @@
     – присылает уведомление в TG только о первом сбое и о «выздоровлении».
 """
 
-from future import annotations
 
 import random
 import time
