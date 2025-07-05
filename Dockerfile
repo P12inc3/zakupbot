@@ -1,6 +1,5 @@
 FROM python:3.12-slim
 
-# ---------- Linux-пакеты ----------
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
@@ -21,17 +20,13 @@ RUN apt-get update && apt-get install -y \
     xdg-utils && \
     rm -rf /var/lib/apt/lists/*
 
-# ---------- Python-зависимости ----------
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ---------- Код ----------
 WORKDIR /app
 COPY . /app
 
-# ---------- Пути для Selenium ----------
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
-# ---------- Старт ----------
-CMD ["python", "main.py"]
+CMD ["python", "main.py"]        # или zakup_monitor.py, если так назовёшь
