@@ -1,8 +1,4 @@
-import time
-import traceback
-import re
-import logging
-import requests
+import logging, random, re, time, traceback, requests
 from datetime import datetime, timedelta, timezone
 
 from selenium import webdriver
@@ -11,115 +7,107 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
 
-# НАСТРОЙКИ
-TOKEN = "5526925742:AAEnEEnlGcnzqcWIVFFeQsniVPDzImuUhvg"
-CHAT_IDS = ["696601899"]
-URL = (
-    "https://zakup.sk.kz/#/ext?tabs=advert&q=\u042d\u043a\u0441\u043f\u0435\u0440\u0442\u0438\u0437&adst=PUBLISHED&lst=PUBLISHED&page=1"
-)
-WAIT_SELECTOR = "div.block-footer"  # Блок, где ищем "Найдено"
+# ───── НАСТРОЙКИ ─────
+TOKEN     = "5526925742:AAEnEEnlGcnzqcWIVFFeQsniVPDzImuUhvg"
+CHAT_IDS  = ["696601899"]
 
-CHECK_INTERVAL = 300
-MAX_CONSECUTIVE_ERRORS = 3
+URL       = ("https://zakup.sk.kz/#/ext?"
+             "tabs=advert&q=Экспертиз&adst=PUBLISHED&lst=PUBLISHED&page=1")
+WAIT_SEL  = "div.block-footer"
+
+CHECK_INTERVAL       = 300      # 5 мин
+JITTER_SECONDS       = 30
+MAX_CONSEC_ERRORS    = 4
 DRIVER_REFRESH_HOURS = 6
+BACKOFF_STEP         = 60
+BACKOFF_MAX          = 900
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s [%(levelname)s] %(message)s")
 
-
-# TELEGRAM
-
-def tg_send(text):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    for chat_id in CHAT_IDS:
+# ─── Telegram ───
+def tg_send(msg: str):
+    for cid in CHAT_IDS:
         try:
-            r = requests.post(url, data={"chat_id": chat_id, "text": text}, timeout=10)
+            r = requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+                              data={"chat_id": cid, "text": msg}, timeout=10)
             if r.status_code != 200:
                 logging.error("TG %s: %s", r.status_code, r.text)
-        except Exception as exc:
-            logging.error("TG error: %s", exc)
+        except Exception as e:
+            logging.error("TG error: %s", e)
 
-
-# SELENIUM
-
+# ─── WebDriver ───
 def make_driver():
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
-    opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+    return webdriver.Chrome(service=Service("/usr/bin/chromedriver"),
+                            options=opts)
 
-
-# ПАРСИНГ
-_RE = re.compile(r"\u041d\u0430\u0439\u0434\u0435\u043d\u043e\\s+(\\d+)")
-
-def parse_count(text):
-    match = _RE.search(text)
-    return int(match.group(1)) if match else None
-
+# ─── Парсинг ───
+_rx = re.compile(r"Найдено\s+(\d+)")
 def fetch_count(driver):
     driver.get(URL)
-    WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_SELECTOR)))
-    time.sleep(2)
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, WAIT_SEL)))
     txt = driver.execute_script("return document.body.innerText")
-    logging.debug("Fetched body text: %s", txt[:1000])
-    return parse_count(txt)
+    m = _rx.search(txt)
+    return int(m.group(1)) if m else None
 
-
-# ОСНОВНОЙ ЦИКЛ
-
+# ─── Цикл мониторинга ───
 def main():
     driver = make_driver()
-    last_count = None
-    consecutive_err = 0
-    tg_send("✅ Монитор запущен.")
+    born   = datetime.now(tz=timezone.utc)
 
-    try:
-        while True:
-            try:
-                count = fetch_count(driver)
-                if count is None:
-                    raise ValueError("⚠️ Не найдено число лотов. Возможно, изменилась структура страницы.")
+    last, err, backoff, down = None, 0, 0, False
+    tg_send("✅ Монитор запущен")
 
-                if last_count is None:
-                    last_count = count
-                    logging.info("Initial count: %d", count)
-                elif count != last_count:
-                    diff = count - last_count
-                    msg = f"📢 Изменение: {last_count} → {count} (Δ {diff:+})"
-                    tg_send(msg)
-                    logging.info(msg)
-                    last_count = count
-                else:
-                    logging.info("Без изменений (%d)", count)
+    while True:
+        start = time.time()
 
-                consecutive_err = 0  # сброс ошибок
+        # профилактика
+        if datetime.now(tz=timezone.utc) - born > timedelta(hours=DRIVER_REFRESH_HOURS):
+            logging.info("Refresh driver (%.1fh)", DRIVER_REFRESH_HOURS)
+            driver.quit(); driver = make_driver(); born = datetime.now(tz=timezone.utc)
 
-            except Exception as e:
-                consecutive_err += 1
-                logging.warning("Ошибка (%d): %s", consecutive_err, str(e))
-                logging.debug(traceback.format_exc())
-                tg_send(f"❌ Ошибка при получении данных: {e}")
+        try:
+            cnt = fetch_count(driver)
+            if cnt is None:
+                raise ValueError("Строка «Найдено …» не найдена")
 
-                if consecutive_err >= MAX_CONSECUTIVE_ERRORS:
-                    logging.info("🔁 Перезапуск драйвера из-за ошибок")
-                    driver.quit()
-                    driver = make_driver()
-                    consecutive_err = 0
+            if down:
+                tg_send("✅ Связь восстановлена"); down = False
+            err = backoff = 0
 
-            time.sleep(CHECK_INTERVAL)
+            if last is None:
+                last = cnt; logging.info("Initial count: %d", cnt)
+            elif cnt != last:
+                diff = cnt - last
+                arrow = "🔺" if diff > 0 else "🔻"
+                msg = f"{arrow} Лоты: {last} → {cnt} (Δ {diff:+})"
+                tg_send(msg); logging.info(msg); last = cnt
+            else:
+                logging.info("Без изменений (%d)", cnt)
 
-    except KeyboardInterrupt:
-        logging.info("Остановлено пользователем")
-    finally:
-        driver.quit()
+        except (TimeoutException, WebDriverException, Exception) as e:
+            err += 1
+            logging.warning("Fetch failed (%d): %s", err, e)
+            logging.debug("Trace:\n%s", traceback.format_exc())
 
+            if not down:
+                tg_send(f"⚠️ Проблема с сайтом: {e}"); down = True
+            if err >= MAX_CONSEC_ERRORS:
+                logging.error("Слишком много ошибок — перезапуск драйвера")
+                driver.quit(); driver = make_driver(); born = datetime.now(tz=timezone.utc); err = 0
+            backoff = min(backoff + BACKOFF_STEP, BACKOFF_MAX)
+
+        sleep_s = max(0, CHECK_INTERVAL + random.randint(-JITTER_SECONDS, JITTER_SECONDS)
+                         + backoff - (time.time() - start))
+        logging.info("Sleep %.1fs (backoff %ds)", sleep_s, backoff)
+        time.sleep(sleep_s)
 
 if __name__ == "__main__":
     main()
