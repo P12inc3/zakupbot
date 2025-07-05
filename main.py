@@ -1,29 +1,27 @@
-# main.py
-
-import time
-import random
-import traceback
-import re
 import logging
-import requests
+import random
+import re
+import time
+import traceback
 from datetime import datetime, timedelta, timezone
 
+import requests
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
 
-# ───── НАСТРОЙКИ ─────
+# =======================
+# Настройки
+# =======================
 TOKEN = "5526925742:AAEnEEnlGcnzqcWIVFFeQsniVPDzImuUhvg"
 CHAT_IDS = ["696601899"]
 
 URL = (
     "https://zakup.sk.kz/#/ext?"
-    "tabs=advert&q=%D0%AD%D0%BA%D1%81%D0%BF%D0%B5%D1%80%D1%82%D0%B8%D0%B7"
-    "&adst=PUBLISHED&lst=PUBLISHED&page=1"
+    "tabs=advert&q=Экспертиз&adst=PUBLISHED&lst=PUBLISHED&page=1"
 )
 WAIT_SELECTOR = "div.block-footer"
 
@@ -31,8 +29,10 @@ CHECK_INTERVAL = 300
 JITTER_SECONDS = 30
 MAX_CONSECUTIVE_ERRORS = 4
 DRIVER_REFRESH_HOURS = 6
+
 BACKOFF_STEP = 60
 BACKOFF_MAX = 900
+
 LOG_FILE = "monitor.log"
 
 logging.basicConfig(
@@ -41,7 +41,9 @@ logging.basicConfig(
     handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
 )
 
-# ───── Telegram ─────
+# =======================
+# Telegram
+# =======================
 def tg_send(text: str) -> None:
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     for chat_id in CHAT_IDS:
@@ -52,17 +54,21 @@ def tg_send(text: str) -> None:
         except Exception as exc:
             logging.error("TG error: %s", exc)
 
-# ───── WebDriver ─────
+# =======================
+# Selenium WebDriver
+# =======================
 def make_driver() -> webdriver.Chrome:
     opts = webdriver.ChromeOptions()
     opts.add_argument("--headless=new")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-gpu")
     opts.add_argument("--disable-dev-shm-usage")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
+    return webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=opts)
 
-# ───── Парсинг ─────
-_RE = re.compile(r"\b\u041d\u0430\u0439\u0434\u0435\u043d\u043e\s+(\d+)")
+# =======================
+# Парсинг
+# =======================
+_RE = re.compile(r"Найдено\s+(\d+)")
 
 def parse_count(text: str) -> int | None:
     m = _RE.search(text)
@@ -77,7 +83,9 @@ def fetch_count(driver: webdriver.Chrome) -> int | None:
     txt = driver.execute_script("return document.body.innerText")
     return parse_count(txt)
 
-# ───── Основной цикл ─────
+# =======================
+# Основной цикл
+# =======================
 def main() -> None:
     driver = make_driver()
     driver_birth = datetime.now(tz=timezone.utc)
@@ -95,7 +103,7 @@ def main() -> None:
             start = time.time()
 
             if datetime.now(tz=timezone.utc) - driver_birth > timedelta(hours=DRIVER_REFRESH_HOURS):
-                logging.info("Refreshing driver after %.1fh", DRIVER_REFRESH_HOURS)
+                logging.info("Refreshing Chrome driver after %.1f hours.", DRIVER_REFRESH_HOURS)
                 try:
                     driver.quit()
                 except Exception:
@@ -106,7 +114,7 @@ def main() -> None:
             try:
                 count = fetch_count(driver)
                 if count is None:
-                    raise ValueError("Не удалось найти число лотов.")
+                    raise ValueError("Не найдено число лотов.")
 
                 if sent_down_notice:
                     tg_send("✅ Связь с zakup.sk.kz восстановлена.")
@@ -126,7 +134,7 @@ def main() -> None:
                     logging.info(msg)
                     last_count = count
                 else:
-                    logging.info("Unchanged (%d)", count)
+                    logging.info("Unchanged (%d).", count)
 
             except (TimeoutException, WebDriverException, Exception) as exc:
                 consecutive_err += 1
@@ -138,7 +146,7 @@ def main() -> None:
                     sent_down_notice = True
 
                 if consecutive_err >= MAX_CONSECUTIVE_ERRORS:
-                    logging.error("Too many errors. Restarting driver.")
+                    logging.error("Too many errors, restarting driver.")
                     try:
                         driver.quit()
                     except Exception:
